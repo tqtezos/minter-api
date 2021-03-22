@@ -6,14 +6,21 @@ import fs from 'fs';
 import cors from 'cors';
 import { getProvider } from './helpers/ipfs';
 import {
+  handleCachedBigmapQuery,
   handleIpfsFileUpload,
   handleIpfsImageWithThumbnailUpload,
   handleIpfsJSONUpload
 } from './handlers';
+import { knex } from 'knex';
 
 if (!fs.existsSync('./tmp')) {
   fs.mkdirSync('./tmp');
 }
+
+const db = knex({
+  client: 'sqlite3',
+  connection: { filename: ':memory:' }
+});
 
 async function createHttpServer(app: Express) {
   app.use(cors());
@@ -27,7 +34,7 @@ async function createHttpServer(app: Express) {
   );
 
   app.get('/', (req, res) => {
-    return res.status(200).json({ status: "OK" });
+    return res.status(200).json({ status: 'OK' });
   });
 
   const ipfsProvider = await getProvider();
@@ -42,6 +49,10 @@ async function createHttpServer(app: Express) {
 
   app.post('/ipfs-json-upload', (req, res) => {
     return handleIpfsJSONUpload(ipfsProvider, req, res);
+  });
+
+  app.get('/cached-bigmap/:id', (req, res) => {
+    return handleCachedBigmapQuery(db, req, res);
   });
 
   const httpServer = http.createServer(app);
@@ -62,12 +73,20 @@ async function run() {
   const app = express();
   const server = await createHttpServer(app);
   server.listen(port, () => {
-    console.log(`[Server] 🚀 Server ready on port ${port}`)
+    console.log(`[Server] 🚀 Server ready on port ${port}`);
   });
 }
 
 async function main() {
   try {
+    await db.schema.createTable('bigmap_key', (table: any) => {
+      table.increments();
+      table.integer('bigmap_id');
+      table.text('key_string').unique();
+      table.json('data');
+      table.integer('count');
+    });
+
     await run();
   } catch (e) {
     console.log('FATAL - an error occurred during startup:');
