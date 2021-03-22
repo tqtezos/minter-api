@@ -1,0 +1,17 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:data.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model BigMapKey {
+  id         Int    @id @default(autoincrement())
+  bigMapId   Int
+  keyString  String
+  data       String
+  count      Int
+  @@unique([bigMapId, keyString])
+}

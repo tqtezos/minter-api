@@ -12,6 +12,7 @@ import {
   handleIpfsJSONUpload
 } from './handlers';
 import { knex } from 'knex';
+import { PrismaClient } from '@prisma/client';
 
 if (!fs.existsSync('./tmp')) {
   fs.mkdirSync('./tmp');
@@ -23,6 +24,8 @@ const db = knex({
 });
 
 async function createHttpServer(app: Express) {
+  const prisma = new PrismaClient();
+
   app.use(cors());
   app.use(bodyParser.urlencoded({ extended: true }));
   app.use(bodyParser.json());
@@ -51,8 +54,8 @@ async function createHttpServer(app: Express) {
     return handleIpfsJSONUpload(ipfsProvider, req, res);
   });
 
-  app.get('/cached-bigmap/:id', (req, res) => {
-    return handleCachedBigmapQuery(db, req, res);
+  app.get('/cached-bigmap/:network/:id', (req, res) => {
+    return handleCachedBigmapQuery(prisma, req, res);
   });
 
   const httpServer = http.createServer(app);
@@ -79,14 +82,6 @@ async function run() {
 
 async function main() {
   try {
-    await db.schema.createTable('bigmap_key', (table: any) => {
-      table.increments();
-      table.integer('bigmap_id');
-      table.text('key_string').unique();
-      table.json('data');
-      table.integer('count');
-    });
-
     await run();
   } catch (e) {
     console.log('FATAL - an error occurred during startup:');

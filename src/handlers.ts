@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { IpfsProvider } from './providers/ipfs';
 import axios from 'axios';
-import { Knex } from 'knex';
+import { PrismaClient } from '@prisma/client';
 
 export async function handleIpfsFileUpload(
   ipfsProvider: IpfsProvider,
@@ -69,7 +69,7 @@ export async function handleIpfsJSONUpload(
 }
 
 async function cacheBigMapKeyRange(
-  db: Knex<any, unknown[]>,
+  prisma: PrismaClient,
   bigMapId: number,
   offset: number,
   size: number
@@ -79,47 +79,52 @@ async function cacheBigMapKeyRange(
     `https://api.better-call.dev/v1/bigmap/edo2net/${bigMapId}/keys?offset=${offset}&size=${size}`
   );
   const data = keysResp.data;
-  for (let a of data) {
-    await db('bigmap_key').insert({
-      bigmap_id: bigMapId,
-      key_string: a.data.key_string,
-      data: JSON.stringify(a.data),
-      count: a.count
-    });
+  for (let item of data) {
+    try {
+      await prisma.bigMapKey.create({
+        data: {
+          bigMapId,
+          keyString: item.data.key_string,
+          data: JSON.stringify(item.data),
+          count: item.count
+        }
+      });
+    } catch (e) {
+      console.log(e);
+    }
   }
 }
 
-async function cacheBigMapKeys(db: Knex<any, unknown[]>, bigMapId: number) {
+async function cacheBigMapKeys(prisma: PrismaClient, bigMapId: number) {
   const bigMapResp = await axios.get(
     `https://api.better-call.dev/v1/bigmap/edo2net/${bigMapId}`
   );
-  // *DANGER* - the knex type definitions are not correctly aligned with the
-  // true data being passed around in the library. This code is fragile
-  // because of this. Proceed with caution :(
-  const bigMapKeyCount = ((
-    await db('bigmap_key')
-      .select('*')
-      .where({
-        bigmap_id: bigMapId
-      })
-      .count<Record<string, number>>({ count: '*' })
-  )[0] as any).count;
-
+  const bigMapKeyCount = await prisma.bigMapKey.count({ where: { bigMapId } });
   const numUncachedKeys = bigMapResp.data.total_keys - bigMapKeyCount;
-  console.log(`Number uncached keys: ${numUncachedKeys}`);
 
   if (numUncachedKeys > 0) {
     for (let i = numUncachedKeys; i > 0; i = i - 10) {
       const offset = Math.floor((numUncachedKeys - i) / 10) * 10;
       const rem = i % 10;
       const size = rem === 0 || i > 10 ? 10 : rem;
-      await cacheBigMapKeyRange(db, bigMapId, offset, size);
+      await cacheBigMapKeyRange(prisma, bigMapId, offset, size);
     }
   }
 }
 
+function validateNetwork(network: string) {
+  switch (network) {
+    case 'mainnet':
+    case 'edo2net':
+    case 'sandbox':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export async function handleCachedBigmapQuery(
-  db: Knex<any, unknown[]>,
+  prisma: PrismaClient,
   req: Request,
   res: Response
 ) {
@@ -131,12 +136,21 @@ export async function handleCachedBigmapQuery(
       error: 'Failed to parse bigmap id'
     });
   }
-  await cacheBigMapKeys(db, bigMapId);
-  const bigMapKeys = await db('bigmap_key').select('*').where({
-    bigmap_id: bigMapId
-  });
-  const results = bigMapKeys.map((v: any) => {
-    return { data: JSON.parse(v.data), count: v.count };
-  });
-  return res.status(200).json(Array.from(results.values()));
+
+  const network = req.params.network;
+  if (!network || !validateNetwork(network)) {
+    return res.status(500).json({
+      error: `Network '${network}' is not supported`
+    });
+  }
+
+  await cacheBigMapKeys(prisma, bigMapId);
+
+  const bigMapKeys = await prisma.bigMapKey.findMany({ where: { bigMapId } });
+  const results = bigMapKeys.map(v => ({
+    data: JSON.parse(v.data),
+    count: v.count
+  }));
+
+  return res.status(200).json(results);
 }
