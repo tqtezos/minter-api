@@ -70,13 +70,15 @@ export async function handleIpfsJSONUpload(
 
 async function cacheBigMapKeyRange(
   prisma: PrismaClient,
+  network: string,
   bigMapId: number,
   offset: number,
   size: number
 ) {
-  console.log(`Offset: ${offset}, Size: ${size}`);
+  // console.log(`Offset: ${offset}, Size: ${size}`);
+  const queryParams = `?offset=${offset}&size=${size}`;
   const keysResp = await axios.get(
-    `https://api.better-call.dev/v1/bigmap/edo2net/${bigMapId}/keys?offset=${offset}&size=${size}`
+    `${process.env.BCD_API}/v1/bigmap/${network}/${bigMapId}/keys${queryParams}`
   );
   const data = keysResp.data;
   for (let item of data) {
@@ -95,9 +97,13 @@ async function cacheBigMapKeyRange(
   }
 }
 
-async function cacheBigMapKeys(prisma: PrismaClient, bigMapId: number) {
+async function cacheBigMapKeys(
+  prisma: PrismaClient,
+  network: string,
+  bigMapId: number
+) {
   const bigMapResp = await axios.get(
-    `https://api.better-call.dev/v1/bigmap/edo2net/${bigMapId}`
+    `${process.env.BCD_API}/v1/bigmap/${network}/${bigMapId}`
   );
   const bigMapKeyCount = await prisma.bigMapKey.count({ where: { bigMapId } });
   const numUncachedKeys = bigMapResp.data.total_keys - bigMapKeyCount;
@@ -107,44 +113,45 @@ async function cacheBigMapKeys(prisma: PrismaClient, bigMapId: number) {
       const offset = Math.floor((numUncachedKeys - i) / 10) * 10;
       const rem = i % 10;
       const size = rem === 0 || i > 10 ? 10 : rem;
-      await cacheBigMapKeyRange(prisma, bigMapId, offset, size);
+      await cacheBigMapKeyRange(prisma, network, bigMapId, offset, size);
     }
   }
 }
 
-function validateNetwork(network: string) {
-  switch (network) {
-    case 'mainnet':
-    case 'edo2net':
-    case 'sandbox':
-      return true;
-    default:
-      return false;
+type ParsedCachedBigMapQueryParams =
+  | { valid: false; error: string }
+  | { valid: true; network: string; bigMapId: number };
+
+function parseCachedBigMapQueryParams(
+  req: Request
+): ParsedCachedBigMapQueryParams {
+  const bigMapId = parseInt(req.params.id);
+  if (isNaN(bigMapId)) {
+    return { valid: false, error: 'Failed to parse bigmap id' };
   }
+
+  const validNetworks = ['mainnet', 'edo2net', 'sandbox'];
+  const network = req.params.network;
+  if (!network || !validNetworks.includes(network)) {
+    return { valid: false, error: `Network '${network}' is not supported` };
+  }
+
+  return { valid: true, bigMapId, network };
 }
 
-export async function handleCachedBigmapQuery(
+export async function handleCachedBigMapQuery(
   prisma: PrismaClient,
   req: Request,
   res: Response
 ) {
-  let bigMapId;
-  try {
-    bigMapId = parseInt(req.params.id);
-  } catch (e) {
-    return res.status(500).json({
-      error: 'Failed to parse bigmap id'
-    });
+  const params = parseCachedBigMapQueryParams(req);
+  if (!params.valid) {
+    return res.status(500).json({ error: params.error });
   }
 
-  const network = req.params.network;
-  if (!network || !validateNetwork(network)) {
-    return res.status(500).json({
-      error: `Network '${network}' is not supported`
-    });
-  }
+  const { network, bigMapId } = params;
 
-  await cacheBigMapKeys(prisma, bigMapId);
+  await cacheBigMapKeys(prisma, network, bigMapId);
 
   const bigMapKeys = await prisma.bigMapKey.findMany({ where: { bigMapId } });
   const results = bigMapKeys.map(v => ({

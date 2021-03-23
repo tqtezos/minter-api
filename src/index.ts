@@ -4,24 +4,21 @@ import fileUpload from 'express-fileupload';
 import http from 'http';
 import fs from 'fs';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import { getProvider } from './helpers/ipfs';
 import {
-  handleCachedBigmapQuery,
+  handleCachedBigMapQuery,
   handleIpfsFileUpload,
   handleIpfsImageWithThumbnailUpload,
   handleIpfsJSONUpload
 } from './handlers';
-import { knex } from 'knex';
 import { PrismaClient } from '@prisma/client';
+
+dotenv.config();
 
 if (!fs.existsSync('./tmp')) {
   fs.mkdirSync('./tmp');
 }
-
-const db = knex({
-  client: 'sqlite3',
-  connection: { filename: ':memory:' }
-});
 
 async function createHttpServer(app: Express) {
   const prisma = new PrismaClient();
@@ -36,7 +33,7 @@ async function createHttpServer(app: Express) {
     })
   );
 
-  app.get('/', (req, res) => {
+  app.get('/', (_req, res) => {
     return res.status(200).json({ status: 'OK' });
   });
 
@@ -55,7 +52,7 @@ async function createHttpServer(app: Express) {
   });
 
   app.get('/cached-bigmap/:network/:id', (req, res) => {
-    return handleCachedBigmapQuery(prisma, req, res);
+    return handleCachedBigMapQuery(prisma, req, res);
   });
 
   const httpServer = http.createServer(app);
