@@ -36,3 +36,5 @@ src/config.json
 
 yarn-debug.log*
 yarn-error.log*
+
+data.db
