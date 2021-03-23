@@ -4,18 +4,25 @@ import fileUpload from 'express-fileupload';
 import http from 'http';
 import fs from 'fs';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import { getProvider } from './helpers/ipfs';
 import {
+  handleCachedBigMapQuery,
   handleIpfsFileUpload,
   handleIpfsImageWithThumbnailUpload,
   handleIpfsJSONUpload
 } from './handlers';
+import { PrismaClient } from '@prisma/client';
+
+dotenv.config();
 
 if (!fs.existsSync('./tmp')) {
   fs.mkdirSync('./tmp');
 }
 
 async function createHttpServer(app: Express) {
+  const prisma = new PrismaClient();
+
   app.use(cors());
   app.use(bodyParser.urlencoded({ extended: true }));
   app.use(bodyParser.json());
@@ -26,8 +33,8 @@ async function createHttpServer(app: Express) {
     })
   );
 
-  app.get('/', (req, res) => {
-    return res.status(200).json({ status: "OK" });
+  app.get('/', (_req, res) => {
+    return res.status(200).json({ status: 'OK' });
   });
 
   const ipfsProvider = await getProvider();
@@ -42,6 +49,10 @@ async function createHttpServer(app: Express) {
 
   app.post('/ipfs-json-upload', (req, res) => {
     return handleIpfsJSONUpload(ipfsProvider, req, res);
+  });
+
+  app.get('/cached-bigmap/:network/:id', (req, res) => {
+    return handleCachedBigMapQuery(prisma, req, res);
   });
 
   const httpServer = http.createServer(app);
@@ -62,7 +73,7 @@ async function run() {
   const app = express();
   const server = await createHttpServer(app);
   server.listen(port, () => {
-    console.log(`[Server] 🚀 Server ready on port ${port}`)
+    console.log(`[Server] 🚀 Server ready on port ${port}`);
   });
 }
 
