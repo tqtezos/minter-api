@@ -21,7 +21,7 @@ async function createHttpServer(app: Express) {
   app.use(bodyParser.json());
   app.use(
     fileUpload({
-      limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
+      limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
       useTempFiles: true
     })
   );
