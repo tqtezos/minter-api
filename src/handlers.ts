@@ -16,6 +16,7 @@ export async function handleIpfsFileUpload(
 
   try {
     const content = await ipfsProvider.uploadFile(file.tempFilePath);
+    await fs.unlink(file.tempFilePath, () => null);
     return res.status(200).json(content);
   } catch (e) {
     console.log(e);
@@ -37,6 +38,7 @@ export async function handleIpfsImageWithThumbnailUpload(
 
   try {
     const content = await ipfsProvider.uploadImageWithThumbnail(file.tempFilePath);
+    await fs.unlink(file.tempFilePath, () => null);
     return res.status(200).json(content);
   } catch (e) {
     console.log(e);
